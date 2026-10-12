@@ -1,0 +1,17 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {StarRain} from '../src/engines/rain.js';import {Fireworks} from '../src/engines/fireworks.js';import {ExclusiveEffects} from '../src/engines/effects.js';
+function fixture(){const rain=new StarRain({random:()=>.5}),fireworks=new Fireworks({random:()=>.5}),effects=new ExclusiveEffects(rain,fireworks);let now=0;return {rain,fireworks,effects,step(state,burst=false){now+=1000/60;effects.update(1/60,state,now,{burst,width:500,height:700,poly:[]});assert.ok(!(rain.level>0&&effects.fireworksBusy()),'rain/cloud must never overlap launches, flashes or sparks');return now;}};}
+test('laugh during rain is ignored; fireworks only start after rain fully ends',()=>{const f=fixture();let launches=0;const burst=f.fireworks.burst.bind(f.fireworks);f.fireworks.burst=(...a)=>{launches++;burst(...a);};for(let i=0;i<60;i++)f.step('smile');assert.ok(f.rain.active>0);const level=f.rain.level;f.step('laugh',true);assert.equal(launches,0);assert.equal(f.effects.fireworksBusy(),false);assert.ok(f.rain.level>=level*0.9,'rain keeps playing');assert.equal(f.effects.mode,'rain');while(f.effects.rainBusy())f.step('laugh',true);assert.equal(launches,0,'blocked laughs are not queued');f.step('laugh',true);assert.equal(launches,1);assert.equal(f.effects.mode,'fireworks');});
+test('smiles and replay buttons cannot queue rain under fireworks or their tails',()=>{const f=fixture();f.step('laugh',true);for(let i=0;i<720;i++){f.effects.rearmRain();f.step('smile');if(!f.effects.fireworksBusy())break;assert.equal(f.rain.active,0);} // no button after expiry
+ while(f.effects.fireworksBusy())f.step('smile');for(let i=0;i<60;i++)f.step('smile');assert.equal(f.effects.mode,'idle');f.step('neutral');f.step('smile');assert.ok(f.rain.active>0);});
+test('rain fade-out also blocks fireworks, and reset releases both effects',()=>{const f=fixture();for(let i=0;i<190;i++)f.step('smile');assert.ok(f.rain.level>0&&f.rain.level<1);assert.equal(f.effects.timer.active(f.step('smile')),false,'timer over, only fading');f.step('laugh',true);assert.equal(f.effects.fireworksBusy(),false);assert.ok(f.rain.level>0);f.effects.reset();assert.equal(f.effects.mode,'idle');assert.equal(f.effects.fireworksBusy(),false);assert.equal(f.rain.active,0);assert.equal(f.effects.busy(),false);});
+test('replay button cannot restart rain while it is still playing',()=>{const f=fixture();for(let i=0;i<60;i++)f.step('smile');const until=f.effects.timer.until;f.effects.rearmRain();f.step('neutral');f.step('smile');assert.equal(f.effects.timer.until,until);});
+test('alternating expressions and sustained laughter never draw both renderers',()=>{const f=fixture();let rainDraws=0,fireworkDraws=0;f.rain.draw=()=>rainDraws++;f.fireworks.draw=()=>fireworkDraws++;for(let i=0;i<1200;i++){const laughing=i%180>=60&&i%180<100;f.step(laughing?'laugh':i%180<60?'smile':'neutral',i%180===60);rainDraws=fireworkDraws=0;f.effects.draw({},500,700,false);assert.ok(rainDraws+fireworkDraws<=1);}});
+test('repeated laughter cannot stack bouquets, but can start a new one after expiry',()=>{
+ const f=fixture();let launches=0;const burst=f.fireworks.burst.bind(f.fireworks);f.fireworks.burst=(...args)=>{launches++;burst(...args);};
+ f.step('laugh',true);assert.equal(launches,1);
+ for(let i=0;i<180;i++)f.step('laugh',true);
+ assert.equal(launches,1,'active bouquet never restarts or stacks');
+ while(f.effects.fireworksBusy())f.step('laugh');
+ f.step('laugh',true);assert.equal(launches,2);
+});
