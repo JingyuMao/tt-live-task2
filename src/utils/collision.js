@@ -15,7 +15,7 @@ export function faceOutline(landmarks, videoWidth, videoHeight, width, height) {
   return OVAL.map(i => ({ x: ox + (1 - landmarks[i].x) * videoWidth * s, y: oy + landmarks[i].y * videoHeight * s }));
 }
 
-// 演示模式用的椭圆“头部”。
+// 椭圆“头部”轮廓（测试用）。
 export function ellipseOutline(cx, cy, rx, ry, points = 36) {
   return Array.from({ length: points }, (_, i) => {
     const a = (i / points) * Math.PI * 2;

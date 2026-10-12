@@ -1,18 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { ExpressionGate } from '../utils/expression.js';
-import { faceOutline, ellipseOutline } from '../utils/collision.js';
+import { faceOutline } from '../utils/collision.js';
 import { EffectAudio } from '../utils/audio.js';
 import { ExclusiveEffects } from '../engines/effects.js';
 import { emptyTrack } from './useFaceInput.js';
+import { createHudStore } from '../utils/hudStore.js';
 
 const LOST_FACE_MS = 450;
 
 /**
  * 共享帧循环：头部轮廓 → 表情判定 → 特效互斥调度 → 声音同步 → 绘制 → 界面数值。
- * settings 是 ref（{ mode, demoExpression, showOutline, gentle }），循环读取最新值而不重启。
+ * settings 是 ref（{ mode, showOutline, gentle }），循环读取最新值而不重启。
  */
-export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, trackRef, headRef, settings, onPageHide }) {
-  const [hud, setHud] = useState({ smile: 0, jaw: 0, particles: 0, collisions: 0, fps: 0, ms: 0, effect: 'none', face: false });
+export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, trackRef, settings, onPageHide }) {
+  // 界面数值不走 React state：写入外部 store，只有订阅的小组件重绘。
+  const hud = useRef(null);
+  if (!hud.current) hud.current = createHudStore({ particles: 0, collisions: 0, fps: 0, ms: 0, face: false });
   const gate = useRef(new ExpressionGate());
   const effects = useRef(null);
   const polyRef = useRef([]);
@@ -31,9 +34,6 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
     polyRef.current = [];
     trackRef.current = emptyTrack();
   }, [rainRef, fireworksRef, trackRef]);
-
-  // 再次点「微笑」可重播星雨；烟花播放中不会排队。
-  const rearmRain = useCallback(() => effects.current?.rearmRain(), []);
 
   useEffect(() => {
     const canvas = overlayRef.current, ctx = canvas.getContext('2d'), size = { w: 1, h: 1 };
@@ -59,10 +59,7 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
       if (!rain || !fireworks) return;
 
       // 1. 头部轮廓（碰撞体）
-      if (s.mode === 'demo') {
-        const rx = Math.min(w * 0.16, 95);
-        polyRef.current = ellipseOutline(headRef.current.x * w, headRef.current.y * h, rx, rx * 1.32);
-      } else if (s.mode === 'camera' && track.landmarks && now - track.at < LOST_FACE_MS && video?.videoWidth) {
+      if (s.mode === 'camera' && track.landmarks && now - track.at < LOST_FACE_MS && video?.videoWidth) {
         polyRef.current = faceOutline(track.landmarks, video.videoWidth, video.videoHeight, w, h);
       } else polyRef.current = [];
       const poly = polyRef.current;
@@ -71,10 +68,8 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
       // 2. 表情按识别频率采样（每 50 ms），而不是按屏幕刷新率。
       if (now - lastSample > 50) {
         lastSample = now;
-        let smile = track.smile, jaw = track.jaw;
-        if (s.mode === 'demo') { smile = s.demoExpression === 'neutral' ? 0 : 0.9; jaw = s.demoExpression === 'laugh' ? 0.7 : 0.03; }
         if (poly.length) {
-          const result = gate.current.update(smile, jaw, now);
+          const result = gate.current.update(track.smile, track.jaw, now);
           expression = result.state; burst = result.burst;
         } else { expression = 'neutral'; gate.current.reset(); }
       }
@@ -95,21 +90,11 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
       else if (!raining && previous.raining && !fireworksBusy) sound.current.release('rain');
       audioState.current = { rainUntil: controller.timer.until, raining, fireworks: fireworksBusy };
 
-      // 4. 轮廓与演示头像
+      // 4. 碰撞轮廓（设计开关，默认不显示）
       ctx.clearRect(0, 0, w, h);
-      if (poly.length) {
+      if (poly.length && s.showOutline) {
         ctx.beginPath(); poly.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.closePath();
-        if (s.mode === 'demo') { ctx.fillStyle = '#334833'; ctx.fill(); }
-        if (s.showOutline) { ctx.strokeStyle = '#d4f88ca0'; ctx.lineWidth = 1.4; ctx.setLineDash([4, 5]); ctx.stroke(); ctx.setLineDash([]); }
-        if (s.mode === 'demo') {
-          const cx = headRef.current.x * w, cy = headRef.current.y * h, r = Math.min(w * 0.16, 95);
-          ctx.fillStyle = '#d4f88c'; ctx.beginPath(); ctx.arc(cx - r * 0.33, cy - r * 0.18, 3, 0, 7); ctx.arc(cx + r * 0.33, cy - r * 0.18, 3, 0, 7); ctx.fill();
-          ctx.beginPath();
-          if (s.demoExpression === 'laugh') ctx.ellipse(cx, cy + r * 0.4, r * 0.26, r * 0.3, 0, 0, 7);
-          else if (s.demoExpression === 'smile') ctx.arc(cx, cy + r * 0.18, r * 0.32, 0, Math.PI);
-          else { ctx.moveTo(cx - r * 0.2, cy + r * 0.35); ctx.lineTo(cx + r * 0.2, cy + r * 0.35); }
-          ctx.strokeStyle = '#d4f88c'; ctx.lineWidth = 3; ctx.stroke();
-        }
+        ctx.strokeStyle = '#d4f88ca0'; ctx.lineWidth = 1.4; ctx.setLineDash([4, 5]); ctx.stroke(); ctx.setLineDash([]);
       }
 
       controller.draw(ctx, w, h, s.gentle);
@@ -117,11 +102,9 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
       // 5. 界面数值每 250 ms 更新一次，避免每帧触发 React 渲染。
       if (now - lastHud > 250) {
         lastHud = now;
-        setHud({
-          smile: gate.current.smile, jaw: gate.current.jaw,
+        hud.current.set({
           particles: rain.active + fireworks.active, collisions: fireworks.collisions,
-          fps: Math.round(1000 / Math.max(frameMs, 1)), ms: Math.round(track.ms),
-          effect: controller.fireworksBusy() ? 'fireworks' : rain.level > 0 ? 'rain' : 'none', face: poly.length > 0,
+          fps: Math.round(1000 / Math.max(frameMs, 1)), ms: Math.round(track.ms), face: poly.length > 0,
         });
       }
     };
@@ -148,7 +131,7 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
       effects.current = null;
       sound.current.dispose();
     };
-  }, [overlayRef, rainRef, fireworksRef, videoRef, trackRef, headRef, settings, resetEffects]);
+  }, [overlayRef, rainRef, fireworksRef, videoRef, trackRef, settings, resetEffects]);
 
-  return { hud, gate, resetEffects, rearmRain };
+  return { hud: hud.current, gate, resetEffects };
 }

@@ -30,7 +30,7 @@ export function useFaceInput(active, handlers) {
       trackRef.current = { landmarks: data.landmarks, smile: data.smile, jaw: data.jaw, ms: data.ms, at: performance.now() };
       if (!data.landmarks) h.current.onFaceLost?.();
     },
-    onError: (message) => h.current.onError(message + ' 演示模式仍可使用。'),
+    onError: (message) => h.current.onError(message),
   };
   return { videoRef, trackRef, cameraProps, trackerProps };
 }

@@ -1,4 +1,4 @@
-import { createTracker } from '../utils/tracker.js';
+import { createTracker, prefetchTrackerAssets } from '../utils/tracker.js';
 import { useEffect, useRef } from 'react';
 
 /**
@@ -9,17 +9,21 @@ import { useEffect, useRef } from 'react';
  * - 每帧缩到 480px 宽再识别，最多约 20 次/秒，同一时间只有一帧在途。
  * - onResult({ landmarks, smile, jaw, ms })：landmarks 为 468 个归一化关键点，无人脸时为 null。
  *
+ * - 页面空闲时预先下载模型与 WASM，点击开启摄像头后无需再等待下载。
+ *
  * 不渲染任何界面。
  */
 export default function FaceTracker({ videoRef, enabled, onReady, onResult, onError }) {
   const callbacks = useRef({ onReady, onResult, onError });
   callbacks.current = { onReady, onResult, onError };
 
+  useEffect(() => prefetchTrackerAssets(), []);
+
   useEffect(() => {
     if (!enabled) return undefined;
     const cb = () => callbacks.current;
     if (typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') {
-      cb().onError?.('当前浏览器不支持后台识别，请使用新版 Chrome、Edge 或 Safari，或使用演示模式。');
+      cb().onError?.('当前浏览器不支持后台识别，请使用新版 Chrome、Edge 或 Safari。');
       return undefined;
     }
 
@@ -29,7 +33,7 @@ export default function FaceTracker({ videoRef, enabled, onReady, onResult, onEr
     catch (error) { cb().onError?.('后台识别无法启动：' + error.message); return; }
     const worker = transport.worker;
     const timeout = setTimeout(() => {
-      if (!ready && !disposed) cb().onError?.('识别模型加载超时，请重试。演示模式仍可使用。');
+      if (!ready && !disposed) cb().onError?.('识别模型加载超时，请重试。');
     }, 60000);
 
     worker.onmessage = ({ data }) => {

@@ -22,8 +22,7 @@ body {
     "Microsoft YaHei",
     sans-serif;
 }
-button,
-input {
+button {
   font: inherit;
 }
 button {
@@ -41,9 +40,7 @@ button:disabled {
   cursor: default;
   opacity: 0.7;
 }
-button:focus-visible,
-input:focus-visible,
-.stage:focus-visible {
+button:focus-visible {
   outline: 2px solid #ff6294;
   outline-offset: 3px;
 }
@@ -224,9 +221,6 @@ button span {
   width: 20px;
   height: 20px;
 }
-.orientation small {
-  font-size: 11px;
-}
 .source-heading {
   font-weight: 650;
   display: flex;
@@ -331,10 +325,6 @@ button span {
   font-size: 12px;
   gap: 8px;
 }
-.preview-toolbar small {
-  margin-left: 8px;
-  color: #777;
-}
 .ai-badge {
   background: #232325;
   border-radius: 5px;
@@ -374,9 +364,6 @@ button span {
 }
 .stage canvas {
   pointer-events: none;
-}
-.stage.night-demo {
-  background: radial-gradient(ellipse at 50% 80%, #132c42 0%, #071326 70%);
 }
 .stage-top,
 .stage-bottom {
@@ -442,12 +429,6 @@ button span {
 .welcome p {
   font-size: 12px;
 }
-.welcome button {
-  min-height: 30px;
-  padding: 3px 14px;
-  margin-top: 5px;
-  font-size: 12px;
-}
 .below-preview {
   display: flex;
   justify-content: space-between;
@@ -455,32 +436,6 @@ button span {
   font-size: 11px;
   gap: 12px;
   margin-bottom: 14px;
-}
-#demoControls {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-.demo-label {
-  font-size: 11px;
-  color: #929299;
-}
-.demo-buttons {
-  display: flex;
-  gap: 6px;
-}
-.demo-buttons button {
-  font-size: 12px;
-  min-height: 32px;
-  padding: 5px 10px;
-}
-.demo-buttons button[aria-pressed="true"] {
-  background: #432330;
-  border-color: #b73b65;
-  color: #ffb5cd;
 }
 .bottom-tools {
   display: flex;
@@ -621,85 +576,6 @@ button span {
   border-radius: 50%;
   flex-shrink: 0;
   margin-top: 6px;
-}
-dialog {
-  background: #202023;
-  color: var(--text);
-  border: 1px solid #44444b;
-  border-radius: 14px;
-  padding: 22px;
-  width: min(420px, 92vw);
-  box-shadow: 0 20px 100px #0009;
-}
-dialog::backdrop {
-  background: #0009;
-}
-.dialog-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 22px;
-}
-.dialog-title .icon-button {
-  font-size: 25px;
-}
-dialog p {
-  font-size: 13px;
-  line-height: 1.8;
-  color: #b4b4ba;
-  margin-top: 14px;
-}
-.readings > div,
-.slider-label,
-.toggle {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-}
-output {
-  color: #ff80ad;
-}
-meter {
-  display: block;
-  width: 100%;
-  height: 7px;
-  margin: 9px 0 20px;
-  appearance: none;
-  background: #39393e;
-  border-radius: 6px;
-}
-meter::-webkit-meter-bar {
-  background: #39393e;
-  border: 0;
-  height: 7px;
-}
-meter::-webkit-meter-optimum-value {
-  background: #ff3979;
-}
-meter::-moz-meter-bar {
-  background: #ff3979;
-}
-input[type="range"] {
-  width: 100%;
-  accent-color: var(--pink);
-  margin: 12px 0 20px;
-}
-.toggle {
-  min-height: 40px;
-}
-.toggle input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--pink);
-}
-.stage:fullscreen {
-  width: min(100vw, 46.153846dvh);
-  height: auto;
-  max-height: none;
-  aspect-ratio: 9/19.5;
-  margin: auto;
-  border-radius: 0;
 }
 @media (min-width: 1700px) {
   .tool {
@@ -984,8 +860,12 @@ input[type="range"] {
     display: none;
   }
 }
-.stage:fullscreen {
-  width: min(100vw, 46.153846dvh);
-  height: auto;
-  aspect-ratio: 9/19.5;
+
+/* 只有摄像头开关可交互：其余工作台控件仅作展示，无悬停、点击与提示。 */
+button[aria-disabled="true"],
+button:disabled {
+  pointer-events: none;
+}
+.stage-social {
+  margin-left: auto;
 }

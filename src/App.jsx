@@ -4,13 +4,7 @@ import Camera from './components/Camera.jsx';
 import FaceTracker from './components/FaceTracker.jsx';
 import RainEffect from './components/RainEffect.jsx';
 import FireworkEffect from './components/FireworkEffect.jsx';
-import { RAIN_DURATION_MS } from './utils/expression.js';
-
-const EXPRESSIONS = [
-  { id: 'neutral', label: '平静' },
-  { id: 'smile', label: '微笑 · 星雨' },
-  { id: 'laugh', label: '大笑 · 烟花' },
-];
+import { ModeLabel, RuntimeStats } from './components/StudioStats.jsx';
 
 // 工作台界面的线条图标。
 function Icon({ children }) {
@@ -38,8 +32,13 @@ const I = {
   mic: <Icon><rect x="8" y="2" width="8" height="13" rx="4" /><path d="M4 10v2a8 8 0 0 0 16 0v-2m-8 10v4m-4 0h8" /></Icon>,
 };
 
+// 纯展示的工作台控件：保留按钮外观，但不可点击、不可聚焦（界面中只有摄像头开关可交互）。
+function Static({ className, children, ...rest }) {
+  return <button type="button" className={className} tabIndex={-1} aria-disabled="true" {...rest}>{children}</button>;
+}
+
 export default function App() {
-  const { mode, status, setStatus, demoExpression, showOutline, setShowOutline, gentle, setGentle, hud, stageRef, settingsRef, helpRef, overlayRef, rainRef, fireworksRef, face, toggleCamera, startDemo, selectDemoExpression, onPointerDown, onPointerMove, onPointerUp, onKeyDown, toggleFullscreen, openSettings, openHelp, modeLabel, hint, cameraOn, unavailable } = useStudio();
+  const { mode, status, hud, overlayRef, rainRef, fireworksRef, face, toggleCamera, cameraOn } = useStudio();
   return (
     <>
       <header className="topbar">
@@ -51,9 +50,9 @@ export default function App() {
         <div className="stream-title">Lets Go LIVE! <span aria-hidden="true">✎　↗</span></div>
         <nav aria-label="工作台">
           <span className="nav-label">{I.home}直播中心</span>
-          <button className="icon-button" aria-label="通知" onClick={() => setStatus('当前没有新通知')}>{I.bell}</button>
-          <button className="icon-button" aria-label="使用帮助" onClick={openHelp}>{I.help}</button>
-          <button className="icon-button" aria-label="互动设置" onClick={openSettings}>{I.sliders}</button>
+          <Static className="icon-button" aria-label="通知">{I.bell}</Static>
+          <Static className="icon-button" aria-label="使用帮助">{I.help}</Static>
+          <Static className="icon-button" aria-label="互动设置">{I.sliders}</Static>
           <span className="account"><span className="avatar">{I.user}</span>本地预览</span>
         </nav>
       </header>
@@ -63,50 +62,39 @@ export default function App() {
           <section className="panel sources">
             <h2>移动端视图 <span>⌄</span></h2>
             <div className="orientation">
-              <span className="selected" title="当前固定为竖屏">{I.phone}</span>
-              <span>{I.monitor}<small>9:19.5</small></span>
+              <span className="selected">{I.phone}</span>
+              <span>{I.monitor}</span>
             </div>
             <div className="source-heading">全屏摄像头 <span>⌄</span><span className="more">•••</span></div>
-            <button className="source-row" onClick={toggleCamera}>{I.camera}<span>相机</span><span className="source-dot" /></button>
+            <Static className="source-row">{I.camera}<span>相机</span><span className="source-dot" /></Static>
             <div className="source-space" />
-            <button className="add-source" onClick={toggleCamera}>添加源</button>
+            <Static className="add-source">添加源</Static>
           </section>
           <section className="panel tools">
             <h2>工具 <b className="pink-dot" /></h2>
             <p className="section-label">互动</p>
             <div className="tool-grid">
-              <button className="tool" onClick={startDemo}>{I.sparkle}<span>表情特效</span></button>
-              <button className="tool" disabled title={unavailable}>{I.gift}<span>观众心愿</span></button>
-              <button className="tool" onClick={startDemo}>{I.target}<span>一起玩</span></button>
-              <button className="tool" onClick={openSettings}>{I.sliders}<span>互动设置</span></button>
+              <Static className="tool">{I.sparkle}<span>表情特效</span></Static>
+              <button className="tool" disabled>{I.gift}<span>观众心愿</span></button>
+              <Static className="tool">{I.target}<span>一起玩</span></Static>
+              <Static className="tool">{I.sliders}<span>互动设置</span></Static>
             </div>
             <p className="section-label">成长中心</p>
             <div className="tool-grid">
-              <button className="tool" disabled title={unavailable}>{I.heart}<span>粉丝团</span></button>
-              <button className="tool" onClick={openHelp}>{I.book}<span>玩法手册</span></button>
-              <button className="tool" disabled title={unavailable}>{I.gift}<span>礼物展馆</span></button>
+              <button className="tool" disabled>{I.heart}<span>粉丝团</span></button>
+              <Static className="tool">{I.book}<span>玩法手册</span></Static>
+              <button className="tool" disabled>{I.gift}<span>礼物展馆</span></button>
             </div>
           </section>
         </aside>
 
         <section className="center">
           <div className="preview-toolbar">
-            <span>直播预览 <small>9:19.5</small></span>
+            <span>直播预览</span>
             <span className="ai-badge">✦ 表情互动已就绪</span>
           </div>
           <div className="preview-space">
-            <section
-              ref={stageRef}
-              className={`stage${mode === 'demo' ? ' night-demo' : ''}`}
-              style={{ touchAction: mode === 'demo' ? 'none' : 'pan-y' }}
-              aria-label="9:19.5 直播互动预览"
-              tabIndex={0}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onPointerCancel={onPointerUp}
-              onKeyDown={onKeyDown}
-            >
+            <section className="stage" aria-label="9:19.5 直播互动预览">
               <Camera ref={face.videoRef} {...face.cameraProps} />
               <canvas ref={overlayRef} className="effect-layer" aria-hidden="true" />
               <RainEffect ref={rainRef} />
@@ -114,7 +102,7 @@ export default function App() {
               <FaceTracker {...face.trackerProps} />
 
               <div className="stage-top">
-                <div className="identity"><span className="avatar">{I.user}</span><strong>Libra Mars</strong></div>
+                <div className="identity"><span className="avatar">{I.user}</span><strong>Caterina Mao</strong></div>
                 <span className="preview-tag">预览</span>
               </div>
               {(mode === 'idle' || mode === 'loading') && (
@@ -125,48 +113,30 @@ export default function App() {
                 </div>
               )}
               <div className="stage-bottom">
-                <span>{hint}</span>
                 <div className="stage-social" aria-hidden="true">♡　↗　•••</div>
               </div>
             </section>
           </div>
 
           <div className="below-preview">
-            <span>{modeLabel}</span>
-            <span>画布 9:19.5</span>
+            <ModeLabel mode={mode} hud={hud} />
           </div>
-          {mode === 'demo' && (
-            <div id="demoControls">
-              <span className="demo-label">模拟表情 · 拖动画面移动头部</span>
-              <div className="demo-buttons">
-                {EXPRESSIONS.map(e => (
-                  <button key={e.id} aria-pressed={demoExpression === e.id} onClick={() => selectDemoExpression(e.id)}>{e.label}</button>
-                ))}
-              </div>
-            </div>
-          )}
           <div className="bottom-tools">
             <div className="toolbar-group">
-              <button className="icon-button" aria-label="体验特效" title="体验特效" onClick={startDemo}>{I.sparkle}</button>
-              <button className="icon-button" aria-label="相机" title="相机" onClick={toggleCamera}>{I.camera}</button>
-              <button className="icon-button" aria-label="预览全屏" title="预览全屏" onClick={toggleFullscreen}>{I.monitor}</button>
+              <Static className="icon-button" aria-label="体验特效">{I.sparkle}</Static>
+              <Static className="icon-button" aria-label="相机">{I.camera}</Static>
+              <Static className="icon-button" aria-label="预览全屏">{I.monitor}</Static>
             </div>
             <div className="toolbar-group">
-              <button className="icon-button" aria-label="特效设置" onClick={openSettings}>{I.sliders}</button>
-              <span className="audio-control" title="本地预览不采集声音">{I.speaker}<span className="audio-track"><i /></span></span>
-              <span className="audio-control" title="麦克风未启用">{I.mic}<span className="audio-track mic"><i /></span></span>
+              <Static className="icon-button" aria-label="特效设置">{I.sliders}</Static>
+              <span className="audio-control">{I.speaker}<span className="audio-track"><i /></span></span>
+              <span className="audio-control">{I.mic}<span className="audio-track mic"><i /></span></span>
             </div>
             <button className="primary" onClick={toggleCamera}>
               {mode === 'loading' ? '取消开启' : mode === 'camera' ? '关闭摄像头' : '开启摄像头'} <span>{cameraOn ? '×' : '↗'}</span>
             </button>
           </div>
-          <footer className="runtime">
-            <span>本地预览 · 未推流</span>
-            <span>{hud.particles} 粒子</span>
-            <span>{hud.collisions} 次碰撞</span>
-            <span>识别 {mode === 'camera' ? hud.ms : '—'} ms</span>
-            <span>{mode === 'idle' ? '—' : hud.fps} FPS</span>
-          </footer>
+          <RuntimeStats mode={mode} hud={hud} />
         </section>
 
         <aside className="panel performance">
@@ -187,38 +157,6 @@ export default function App() {
           </div>
         </aside>
       </main>
-
-      <dialog ref={settingsRef}>
-        <div className="dialog-title">
-          <h2>表情互动设置</h2>
-          <button className="icon-button" aria-label="关闭设置" onClick={() => settingsRef.current.close()}>×</button>
-        </div>
-        <div className="readings">
-          <div><span>微笑指数</span><output>{Math.round(hud.smile * 100)}%</output></div>
-          <meter min="0" max="1" value={hud.smile} aria-label="微笑指数" />
-          <div><span>张嘴程度</span><output>{Math.round(hud.jaw * 100)}%</output></div>
-          <meter min="0" max="1" value={hud.jaw} aria-label="张嘴程度" />
-        </div>
-        <div className="toggle">
-          <label htmlFor="outline">显示碰撞轮廓</label>
-          <input id="outline" type="checkbox" checked={showOutline} onChange={e => setShowOutline(e.target.checked)} />
-        </div>
-        <div className="toggle">
-          <label htmlFor="gentle">柔和特效</label>
-          <input id="gentle" type="checkbox" checked={gentle} onChange={e => setGentle(e.target.checked)} />
-        </div>
-        <p className="settings-note">微笑落下 {RAIN_DURATION_MS / 1000} 秒星雨，大笑绽放烟花。两种特效不会同时出现。</p>
-      </dialog>
-
-      <dialog ref={helpRef}>
-        <div className="dialog-title">
-          <h2>玩法手册</h2>
-          <button className="icon-button" aria-label="关闭帮助" onClick={() => helpRef.current.close()}>×</button>
-        </div>
-        <p>开启摄像头后，自然微笑触发星雨，张嘴大笑触发烟花。移动头部接住散落火星。</p>
-        <p>没有摄像头也可以点击「表情特效」，选择模拟表情并拖动画面里的头部。</p>
-        <p>这是本地互动预览，未连接 TikTok 账号或直播推流。</p>
-      </dialog>
     </>
   );
 }

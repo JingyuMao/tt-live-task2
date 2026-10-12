@@ -35,13 +35,14 @@ const GENTLE=[{kind:'mum',dx:-.9,dy:0,r:.65,count:64,delay:0},{kind:'peony',dx:1
 export class Fireworks {
   constructor({capacity=520,random=Math.random}={}){
     this.random=random;this.pool=Array.from({length:capacity},()=>({life:0,trail:new Float32Array(TRAIL*2)}));
-    this.events=[];this.flashes=[];this.sprites=new Map();this.cursor=0;this.clock=0;this.collisions=0;this.active=0;
+    this.events=[];this.flashes=[];this.sprites=new Map();this.cursor=0;this.clock=0;this.collisions=0;this.active=0;this.alive=0;
   }
-  clear(){for(const p of this.pool)p.life=0;this.events.length=0;this.flashes.length=0;this.collisions=0;this.active=0;this.clock=0;}
+  clear(){for(const p of this.pool)p.life=0;this.events.length=0;this.flashes.length=0;this.collisions=0;this.active=0;this.alive=0;this.clock=0;}
   particle(x,y,vx,vy,life,color,kind='mum',inner=KINDS[kind].inner,glitter=false,layer=1){
     let p;
     for(let i=0;i<this.pool.length;i++){const q=this.pool[this.cursor];this.cursor=(this.cursor+1)%this.pool.length;if(q.life<=0){p=q;break;}}
     if(!p)return;
+    this.alive++; // 存活粒子数随生成/消亡增减，避免每帧扫描整个粒子池。
     Object.assign(p,{x,y,ox:x,oy:y,bounced:false,layer,vx,vy,life,max:life,color,inner,kind,glitter,small:kind==='small',head:0,count:1,sample:0,phase:this.random()*Math.PI*2,split:kind!=='small'&&layer===1&&this.random()<.07});
     p.trail[0]=x;p.trail[1]=y;
   }
@@ -84,7 +85,7 @@ export class Fireworks {
   explode(e){
     const r=this.random,k=KINDS[e.kind];
     // Never draw a partial sphere: shrink the count evenly to free slots, or skip the burst.
-    let free=0;for(const p of this.pool)if(p.life<=0)free++;
+    const free=this.pool.length-this.alive;
     const n=Math.min(e.count,free);if(n<e.count*.5)return;
     const glowLife=e.kind==='crown'?.85:.6;this.flashes.push({x:e.x,y:e.y,life:glowLife,max:glowLife,radius:e.radius*.22,gentle:e.gentle});
     if(this.flashes.length>8)this.flashes.shift();
@@ -107,7 +108,7 @@ export class Fireworks {
     for(const v of poly){minX=Math.min(minX,v.x);maxX=Math.max(maxX,v.x);minY=Math.min(minY,v.y);maxY=Math.max(maxY,v.y);}
     let active=0;
     for(const p of this.pool){
-      if(p.life<=0)continue;p.life-=dt;if(p.life<=0)continue;
+      if(p.life<=0)continue;p.life-=dt;if(p.life<=0){this.alive--;continue;}
       const k=KINDS[p.kind],steps=Math.max(1,Math.ceil(Math.hypot(p.vx,p.vy)*dt/3)),step=dt/steps,damping=Math.exp(-k.drag*step);
       for(let s=0;s<steps;s++){
         p.vx*=damping;p.vy=p.vy*damping+k.gravity*step;p.x+=p.vx*step;p.y+=p.vy*step;
@@ -121,7 +122,7 @@ export class Fireworks {
       p.sample+=dt;if(p.sample>=1/45){p.sample%=1/45;this.record(p);}
       // Secondary embers use the same head collision as every primary spark.
       if(p.split&&p.max-p.life>1.3){p.split=false;for(let j=0;j<5;j++){const a=j*Math.PI*2/5;this.particle(p.x,p.y,p.vx*.25+Math.cos(a)*32,p.vy*.25+Math.sin(a)*32,.55+this.random()*.3,p.color,'small');}}
-      if(p.y>height+40||p.x< -80||p.x>width+80){p.life=0;continue;}active++;
+      if(p.y>height+40||p.x< -80||p.x>width+80){p.life=0;this.alive--;continue;}active++;
     }
     this.active=active;return active;
   }

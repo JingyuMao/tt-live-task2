@@ -96,3 +96,15 @@ test('limited forehead space selects three colors and shells; roomy space restor
   const f=new Fireworks();f.burst(w,h,true,head(.15));assert.equal(f.events.length,2,'gentle mode remains lighter');
  }
 });
+
+test('alive counter matches the pool exactly through launches, embers, edges and clear',()=>{
+  const f=new Fireworks({random:(()=>{let x=7;return()=>(x=(x*16807)%2147483647)/2147483647;})()});
+  const count=()=>f.pool.filter(p=>p.life>0).length;
+  const poly=[{x:200,y:300},{x:300,y:300},{x:300,y:420},{x:200,y:420}];
+  for(let round=0;round<3;round++){
+    f.burst(500,700,false,poly);
+    for(let i=0;i<600;i++){f.update(1/60,poly,500,700);assert.equal(f.alive,count());}
+  }
+  f.burst(500,700,false,poly);for(let i=0;i<90;i++)f.update(1/60,poly,500,700);
+  assert.ok(f.alive>0);f.clear();assert.equal(f.alive,0);assert.equal(count(),0);
+});
