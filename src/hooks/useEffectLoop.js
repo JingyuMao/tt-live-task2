@@ -7,6 +7,11 @@ import { emptyTrack } from './useFaceInput.js';
 import { createHudStore } from '../utils/hudStore.js';
 
 const LOST_FACE_MS = 450;
+// 特效动画帧率上限（与 TikTok Effect House 的 30 FPS 上限一致）。粒子运动按真实时间计算，降帧不改变速度与时长。
+const MAX_FPS = 30;
+const FRAME_MS = 1000 / MAX_FPS;
+// 允许 2 ms 抖动：60 Hz 屏每 2 帧、120 Hz 屏每 4 帧画一次，避免偶尔被跳成 20 FPS。
+const FRAME_SLACK_MS = 2;
 
 /**
  * 共享帧循环：头部轮廓 → 表情判定 → 特效互斥调度 → 声音同步 → 绘制 → 界面数值。
@@ -15,7 +20,7 @@ const LOST_FACE_MS = 450;
 export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, trackRef, settings, onPageHide }) {
   // 界面数值不走 React state：写入外部 store，只有订阅的小组件重绘。
   const hud = useRef(null);
-  if (!hud.current) hud.current = createHudStore({ particles: 0, collisions: 0, fps: 0, ms: 0, face: false });
+  if (!hud.current) hud.current = createHudStore({ face: false });
   const gate = useRef(new ExpressionGate());
   const effects = useRef(null);
   const polyRef = useRef([]);
@@ -46,14 +51,14 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
     };
     const ro = new ResizeObserver(fit); ro.observe(canvas); fit();
 
-    let raf = 0, last = 0, lastSample = 0, lastHud = 0, frameMs = 16, expression = 'neutral';
+    let raf = 0, last = 0, lastSample = 0, lastHud = 0, expression = 'neutral';
     const controller = new ExclusiveEffects(rainRef.current, fireworksRef.current);
     effects.current = controller;
     const loop = (now) => {
       raf = requestAnimationFrame(loop);
       if (document.hidden) { last = now; return; }
+      if (last && now - last < FRAME_MS - FRAME_SLACK_MS) return;
       const dt = now - (last || now); last = now;
-      frameMs = frameMs * 0.95 + Math.min(dt, 100) * 0.05;
       const s = settings.current, { w, h } = size, track = trackRef.current, video = videoRef.current;
       const rain = rainRef.current, fireworks = fireworksRef.current;
       if (!rain || !fireworks) return;
@@ -78,7 +83,7 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
       if (burst && controller.busy(now)) gate.current.lastBurst = -Infinity;
 
       // 3. 同一循环推进两个引擎，再让声音跟随同一生命周期。
-      controller.update(Math.min(dt / 1000, .033), expression, now, {
+      controller.update(Math.min(dt / 1000, .05), expression, now, {
         burst, width: w, height: h, gentle: s.gentle, poly,
       });
       const previous = audioState.current;
@@ -99,13 +104,10 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
 
       controller.draw(ctx, w, h, s.gentle);
 
-      // 5. 界面数值每 250 ms 更新一次，避免每帧触发 React 渲染。
+      // 5. 人脸锁定状态每 250 ms 写入一次；状态不变时不触发 React 渲染。
       if (now - lastHud > 250) {
         lastHud = now;
-        hud.current.set({
-          particles: rain.active + fireworks.active, collisions: fireworks.collisions,
-          fps: Math.round(1000 / Math.max(frameMs, 1)), ms: Math.round(track.ms), face: poly.length > 0,
-        });
+        hud.current.set({ face: poly.length > 0 });
       }
     };
     raf = requestAnimationFrame(loop);

@@ -504,16 +504,6 @@ button span {
   height: 4px;
   border-radius: 4px;
 }
-.runtime {
-  font-size: 10px;
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 8px 0 0;
-  color: #85858b;
-  min-height: 30px;
-}
 .performance {
   display: flex;
   flex-direction: column;
@@ -750,10 +740,6 @@ button span {
   .audience-empty {
     min-height: 45px;
   }
-  .runtime {
-    gap: 10px;
-    font-size: 9px;
-  }
   .bottom-tools {
     gap: 5px;
     padding: 6px;
@@ -842,7 +828,9 @@ button span {
     min-height: 0;
   }
   .stage {
-    width: min(100%, 390px, max(200px, calc((100dvh - 220px) * 0.46153846)));
+    /* Mobile: prioritize available width; allow vertical scrolling on shorter screens. */
+    width: min(100%, 390px);
+    flex-shrink: 0;
     border-radius: 22px;
   }
   .welcome p {

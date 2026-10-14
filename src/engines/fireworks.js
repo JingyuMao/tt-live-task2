@@ -1,7 +1,7 @@
-import {collide} from '../utils/collision.js';
+import {collide,inside} from '../utils/collision.js';
 
 // Fixed storage: 520 sparks × 22 trail samples. Star rain has its own 260-particle pool (780 total).
-const TRAIL=22,MAX_EVENTS=12,RISE=.35;
+const TRAIL=22,MAX_EVENTS=12,RISE=.35,TRAIL_HZ=45;
 const BLOOM_SIZE=2; // Double each bloom diameter, subject to screen and forehead clearance.
 // A balanced, staggered bouquet with natural ballistic trails and small sparkling peonies.
 // Rays run from a warm inner color to saturated tips; normal blending plus a soft dark
@@ -29,8 +29,12 @@ const FINALE=[
   {kind:'mum',dx:.65,dy:.75,r:.58,count:74,delay:1.30},
   {kind:'peony',dx:-1.45,dy:.85,r:.36,count:44,delay:1.55}
 ];
-const COMPACT=FINALE.slice(0,3);
-const LOW_HEADROOM_RATIO=.30;
+// Fixed stage position, like the star rain: every bouquet uses the roomy layout computed for a reference head
+// whose forehead sits at this fraction of the frame height, wherever the real face is.
+const FIXED_FOREHEAD=.45;
+// The whole bouquet, embers included, is over this long after the laugh (seconds of real time), together with
+// the firework sound (~3.9 s). Late shells keep their full bloom and fade out faster instead of lingering.
+const BOUQUET_SECONDS=4.0,PACE=.85,FADE=1.25;
 const GENTLE=[{kind:'mum',dx:-.9,dy:0,r:.65,count:64,delay:0},{kind:'peony',dx:1,dy:.25,r:.52,count:48,delay:.48}];
 export class Fireworks {
   constructor({capacity=520,random=Math.random}={}){
@@ -38,12 +42,13 @@ export class Fireworks {
     this.events=[];this.flashes=[];this.sprites=new Map();this.cursor=0;this.clock=0;this.collisions=0;this.active=0;this.alive=0;
   }
   clear(){for(const p of this.pool)p.life=0;this.events.length=0;this.flashes.length=0;this.collisions=0;this.active=0;this.alive=0;this.clock=0;}
-  particle(x,y,vx,vy,life,color,kind='mum',inner=KINDS[kind].inner,glitter=false,layer=1){
+  particle(x,y,vx,vy,life,color,kind='mum',inner=KINDS[kind].inner,glitter=false,layer=1,fade=FADE){
     let p;
     for(let i=0;i<this.pool.length;i++){const q=this.pool[this.cursor];this.cursor=(this.cursor+1)%this.pool.length;if(q.life<=0){p=q;break;}}
     if(!p)return;
     this.alive++; // 存活粒子数随生成/消亡增减，避免每帧扫描整个粒子池。
-    Object.assign(p,{x,y,ox:x,oy:y,bounced:false,layer,vx,vy,life,max:life,color,inner,kind,glitter,small:kind==='small',head:0,count:1,sample:0,phase:this.random()*Math.PI*2,split:kind!=='small'&&layer===1&&this.random()<.07});
+    p.armed=false; // Sparks born over the face pass in front of it until they leave the outline once.
+    Object.assign(p,{x,y,ox:x,oy:y,bounced:false,layer,vx,vy,life,max:life,fade,color,inner,kind,glitter,small:kind==='small',head:0,count:1,sample:0,phase:this.random()*Math.PI*2,split:kind!=='small'&&layer===1&&this.random()<.07});
     p.trail[0]=x;p.trail[1]=y;
   }
   // Reserve the complete lifetime envelope, including gravity and glow, at every edge.
@@ -53,22 +58,22 @@ export class Fireworks {
     const fit=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
     return {x:fit(px,R+margin,width-R-margin),y:fit(py,R+margin,height-R-margin-drift),radius:R};
   }
-  // One expression trigger becomes a staggered bouquet arcing over the head.
+  // One expression trigger becomes a staggered bouquet at a fixed place on the stage (always the full five-shell
+  // layout). The real face only steers launch trails around it; sparks still bounce off it while falling.
   burst(width,height,gentle=false,poly=[]){
     const r=this.random,scale=Math.min(width,height),m=10;
-    let box=null;if(poly.length>2){box=[Infinity,Infinity,-Infinity,-Infinity];for(const v of poly){box[0]=Math.min(box[0],v.x-14);box[1]=Math.min(box[1],v.y-14);box[2]=Math.max(box[2],v.x+14);box[3]=Math.max(box[3],v.y+14);}}
+    let face=null;if(poly.length>2){face=[Infinity,Infinity,-Infinity,-Infinity];for(const v of poly){face[0]=Math.min(face[0],v.x-14);face[1]=Math.min(face[1],v.y-14);face[2]=Math.max(face[2],v.x+14);face[3]=Math.max(face[3],v.y+14);}}
+    const box=[width*.28-14,height*FIXED_FOREHEAD-14,width*.72+14,height*(FIXED_FOREHEAD+.28)+14];
     // Balanced off-center shells with different timing; no dominant central crown.
     const cx=box?(box[0]+box[2])/2:width*(.42+r()*.16),headTop=box?box[1]+14:height*.52;
     const u=scale*.36,cy=headTop-u*.48,start=Math.floor(r()*PALETTES.length),placed=[];
-    // Decide once per trigger so head movement never changes an in-flight bouquet.
-    const compact=box!==null&&headTop<height*LOW_HEADROOM_RATIO;
-    (gentle?GENTLE:compact?COMPACT:FINALE).forEach((b,i)=>{
+    (gentle?GENTLE:FINALE).forEach((b,i)=>{
       // Fit the entire initial bloom above the forehead, including a glow gap.
       // Later gravity carries the lower sparks into the real collider; no collision delay.
       const gap=Math.max(12,scale*.035),ceiling=22;
       // Choose distinct center heights first, then fit each full bloom into that slot.
       // Clamping oversized shells first used to collapse all centers onto the same row.
-      const levels=compact?[.40,.65,.24]:[.39,.63,.19,.79,.46],offsets=compact?[-.30,.30,-.06]:[-.30,.30,-.13,.24,-.34];
+      const levels=[.39,.63,.19,.79,.46],offsets=[-.30,.30,-.13,.24,-.34];
       const band=Math.max(16,headTop-gap-ceiling);
       const preferredY=ceiling+band*levels[i%5];
       const available=Math.max(8,Math.min(preferredY-ceiling,headTop-gap-preferredY));
@@ -76,7 +81,7 @@ export class Fireworks {
       const portrait=height>width*1.3;
       const preferredX=portrait?cx+offsets[i%5]*width:cx+b.dx*u*.66;
       const spot=this.place(width,height,radius,null,placed,preferredX,preferredY,b.kind);placed.push(spot);
-      this.events.push({at:this.clock+b.delay+RISE+r()*.075,...spot,kind:b.kind,count:b.count,palette:PALETTES[(start+i)%PALETTES.length],inner:PALETTE_INNERS[(start+i)%PALETTES.length],gentle,launch:box&&spot.x>box[0]&&spot.x<box[2]?Math.max(box[1],spot.y+2):height+10});
+      this.events.push({end:this.clock+BOUQUET_SECONDS*PACE,at:this.clock+b.delay+RISE+r()*.075,...spot,kind:b.kind,count:b.count,palette:PALETTES[(start+i)%PALETTES.length],inner:PALETTE_INNERS[(start+i)%PALETTES.length],gentle,launch:face&&spot.x>face[0]&&spot.x<face[2]?Math.max(face[1],spot.y+2):height+10});
       // Shells whose straight path would cross the face launch from just above the head instead.
     });
     // Bounded even if a caller accidentally triggers every frame.
@@ -89,13 +94,16 @@ export class Fireworks {
     const n=Math.min(e.count,free);if(n<e.count*.5)return;
     const glowLife=e.kind==='crown'?.85:.6;this.flashes.push({x:e.x,y:e.y,life:glowLife,max:glowLife,radius:e.radius*.22,gentle:e.gentle});
     if(this.flashes.length>8)this.flashes.shift();
-    const tips=k.tips||e.palette,shellLife=k.life+r()*.35+.45*(BLOOM_SIZE-1);
+    const tips=k.tips||e.palette,shellLife=Math.min(k.life+r()*.35+.45*(BLOOM_SIZE-1),(e.end??Infinity)-this.clock);
+    // Keep the bloom intact: the fade only starts once the shell has (nearly) reached full size.
+    // Outer sparks reach ~95% of their final distance after ln(1/0.05)/drag seconds.
+    const fade=Math.max(.35,Math.min(FADE,shellLife-Math.log(1/.05)/k.drag));
     for(let i=0;i<n;i++){
       const angle=i/n*Math.PI*2+(r()-.5)*.032;
       // Three speed layers give a dense heart and an even spherical crown.
       const layer=i%5===0?.5:i%3===0?.76:1;
       const speed=e.radius*k.drag/1.09*layer*(.83+r()*.23);
-      this.particle(e.x,e.y,Math.cos(angle)*speed,Math.sin(angle)*speed,shellLife,tips[i%tips.length],e.kind,e.inner||k.inner,!e.gentle&&layer===1,layer);
+      this.particle(e.x,e.y,Math.cos(angle)*speed,Math.sin(angle)*speed,shellLife,tips[i%tips.length],e.kind,e.inner||k.inner,!e.gentle&&layer===1,layer,fade);
     }
   }
   record(p){p.head=(p.head+1)%TRAIL;p.trail[p.head*2]=p.x;p.trail[p.head*2+1]=p.y;p.count=Math.min(TRAIL,p.count+1);}
@@ -109,19 +117,21 @@ export class Fireworks {
     let active=0;
     for(const p of this.pool){
       if(p.life<=0)continue;p.life-=dt;if(p.life<=0){this.alive--;continue;}
-      const k=KINDS[p.kind],steps=Math.max(1,Math.ceil(Math.hypot(p.vx,p.vy)*dt/3)),step=dt/steps,damping=Math.exp(-k.drag*step);
+      if(!p.armed&&!(poly.length>2&&inside(p.x,p.y,poly)))p.armed=true;
+      // Sub-steps keep collisions accurate for fast sparks and keep trail sampling at TRAIL_HZ at any frame rate.
+      const k=KINDS[p.kind],steps=Math.max(1,Math.ceil(Math.hypot(p.vx,p.vy)*dt/3),Math.ceil(dt*TRAIL_HZ)),step=dt/steps,damping=Math.exp(-k.drag*step);
       for(let s=0;s<steps;s++){
         p.vx*=damping;p.vy=p.vy*damping+k.gravity*step;p.x+=p.vx*step;p.y+=p.vy*step;
-        if(p.x>=minX-3&&p.x<=maxX+3&&p.y>=minY-3&&p.y<=maxY+3&&collide(p,poly,2)){
+        if(p.armed&&p.x>=minX-3&&p.x<=maxX+3&&p.y>=minY-3&&p.y<=maxY+3&&collide(p,poly,2)){
           this.collisions++;
           // Start the reflected trail at contact; do not connect it through the face.
           if(!p.bounced){p.head=0;p.count=1;p.trail[0]=p.x;p.trail[1]=p.y;p.sample=0;}
           p.bounced=true;this.record(p);
         }
+        p.sample+=step;if(p.sample>=1/TRAIL_HZ){p.sample-=1/TRAIL_HZ;this.record(p);}
       }
-      p.sample+=dt;if(p.sample>=1/45){p.sample%=1/45;this.record(p);}
       // Secondary embers use the same head collision as every primary spark.
-      if(p.split&&p.max-p.life>1.3){p.split=false;for(let j=0;j<5;j++){const a=j*Math.PI*2/5;this.particle(p.x,p.y,p.vx*.25+Math.cos(a)*32,p.vy*.25+Math.sin(a)*32,.55+this.random()*.3,p.color,'small');}}
+      if(p.split&&p.max-p.life>1.3){p.split=false;for(let j=0;j<5;j++){const a=j*Math.PI*2/5;this.particle(p.x,p.y,p.vx*.25+Math.cos(a)*32,p.vy*.25+Math.sin(a)*32,Math.min(.55+this.random()*.3,p.life),p.color,'small');}}
       if(p.y>height+40||p.x< -80||p.x>width+80){p.life=0;this.alive--;continue;}active++;
     }
     this.active=active;return active;
@@ -182,7 +192,7 @@ export class Fireworks {
     }
     for(const p of this.pool){
       if(p.life<=0)continue;
-      const age=p.max-p.life,fade=Math.min(1,p.life/(p.small?.5:1.25)),ignition=Math.min(1,age/(.045+(1-p.layer)*.13));
+      const age=p.max-p.life,fade=Math.min(1,p.life/(p.small?.5:p.fade)),ignition=Math.min(1,age/(.045+(1-p.layer)*.13));
       const pulse=Math.max(0,Math.sin(age*17+p.phase))**10;
       const shimmer=gentle?1:.68+.32*pulse,alpha=fade*ignition*shimmer;
       const dx=p.x-p.ox,dy=p.y-p.oy;

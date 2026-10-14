@@ -4,7 +4,7 @@ const EMPTY_TRACK = { landmarks: null, smile: 0, jaw: 0, ms: 0, at: 0 };
 export const emptyTrack = () => ({ ...EMPTY_TRACK });
 
 /**
- * 摄像头 → 人脸识别流程：先等 <Camera> 出画，再启动 <FaceTracker>，最新识别结果写入 trackRef。
+ * 摄像头 → 人脸识别流程：<FaceTracker> 挂载即准备模型，等 <Camera> 出画后才发送视频帧，最新识别结果写入 trackRef。
  * 返回的 cameraProps / trackerProps 直接交给两个组件；回调存在 ref 里，组件不会因重渲染重启。
  * handlers: { onReady, onError, onFaceLost }
  */
@@ -12,6 +12,7 @@ export function useFaceInput(active, handlers) {
   const videoRef = useRef(null);
   const trackRef = useRef(emptyTrack());
   const [started, setStarted] = useState(false);
+  const [preparation, setPreparation] = useState('loading');
   const h = useRef(handlers);
   h.current = handlers;
   // 摄像头关闭后回到「未出画」，下次开启重新走一遍流程。
@@ -24,6 +25,7 @@ export function useFaceInput(active, handlers) {
   };
   const trackerProps = {
     videoRef,
+    onPreparation: setPreparation,
     enabled: active && started,
     onReady: () => h.current.onReady(),
     onResult: (data) => {
@@ -32,5 +34,5 @@ export function useFaceInput(active, handlers) {
     },
     onError: (message) => h.current.onError(message),
   };
-  return { videoRef, trackRef, cameraProps, trackerProps };
+  return { videoRef, trackRef, cameraProps, trackerProps, preparation };
 }

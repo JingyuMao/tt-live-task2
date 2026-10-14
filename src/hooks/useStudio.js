@@ -47,7 +47,7 @@ export function useStudio() {
     if (cameraOn) { stop('摄像头已关闭。影像未保存。'); return; }
     resetEffects();
     setMode('loading');
-    setStatus('正在请求摄像头并载入识别模型…');
+    setStatus(face.preparation === 'ready' ? '识别已就绪，正在请求摄像头…' : '正在请求摄像头，等待识别准备完成…');
   };
 
   return { mode, status, hud, overlayRef, rainRef, fireworksRef, face, toggleCamera, cameraOn };

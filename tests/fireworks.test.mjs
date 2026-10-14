@@ -66,15 +66,19 @@ test('balanced bouquet uses both sides without a dominant centered shell',()=>{
   assert.ok(f.events.some(e=>e.x<300)&&f.events.some(e=>e.x>300));
   const radii=f.events.map(e=>e.radius).sort((a,b)=>b-a);assert.ok(radii[0]/radii[1]<1.2);
 });
-test('phone bursts bloom above the forehead and reach it later while falling',()=>{
+test('fixed bouquet: falling sparks reach the head, never during the opening when the face is below it',()=>{
+  // A low face is only grazed by a few late sparks (single digits per width), so check across phone sizes;
+  // a face higher in the frame sits under the bouquet and gets hit at every size.
+  let grazed=false;
   for(const w of [240,320,390,430]){
-    const h=w*19.5/9,head=Array.from({length:36},(_,i)=>({x:w*.5+w*.16*Math.cos(i*Math.PI/18),y:h*.56+w*.2112*Math.sin(i*Math.PI/18)}));
-    const top=Math.min(...head.map(p=>p.y)),f=new Fireworks({random:()=>.5});f.burst(w,h,false,head);
-    assert.equal(f.events.length,5);for(const e of f.events)assert.ok(e.y+e.radius<top-10,'full bloom clears forehead');
-    let collided=false;
-    for(let i=0;i<420;i++){f.update(1/60,head,w,h);for(const p of f.pool)if(p.bounced){assert.ok(p.max-p.life>1,'no immediate face contact during opening');collided=true;}}
-    assert.ok(collided,'falling particles still interact with the head');
+    const h=w*19.5/9,at=cy=>Array.from({length:36},(_,i)=>({x:w*.5+w*.16*Math.cos(i*Math.PI/18),y:h*cy+w*.2112*Math.sin(i*Math.PI/18)}));
+    const low=at(.56),f=new Fireworks({random:()=>.5});f.burst(w,h,false,low);
+    for(let i=0;i<420;i++){f.update(1/60,low,w,h);for(const p of f.pool)if(p.bounced){assert.ok(p.max-p.life>1,'no immediate face contact during opening');grazed=true;}}
+    const high=at(.45),g=new Fireworks({random:()=>.5});g.burst(w,h,false,high);
+    for(let i=0;i<420;i++)g.update(1/60,high,w,h);
+    assert.ok(g.collisions>20,`${w}px: sparks rain onto a higher face (${g.collisions})`);
   }
+  assert.ok(grazed,'falling particles still interact with a low head');
 });
 test('enlarged phone bouquet keeps distinct heights and all three color families',()=>{
  for(const w of [240,320,390,430]){
@@ -84,11 +88,15 @@ test('enlarged phone bouquet keeps distinct heights and all three color families
   assert.equal(new Set(f.events.map(e=>e.palette.join(','))).size,3);assert.equal(new Set(f.events.map(e=>e.inner)).size,3);
  }
 });
-test('limited forehead space selects three colors and shells; roomy space restores five',()=>{
+test('bouquet plays at one fixed place with the full five shells, wherever the face is',()=>{
  for(const w of [240,320,390,430]){
-  const h=w*19.5/9,head=ratio=>[{x:w*.3,y:h*ratio},{x:w*.7,y:h*ratio},{x:w*.7,y:h*.8},{x:w*.3,y:h*.8}];
-  for(const [ratio,count] of [[.15,3],[.299,3],[.301,5],[.45,5]]){
-   const f=new Fireworks({random:()=>.5});f.burst(w,h,false,head(ratio));assert.equal(f.events.length,count);
+  const h=w*19.5/9,head=ratio=>[{x:w*.3,y:h*ratio},{x:w*.7,y:h*ratio},{x:w*.7,y:h*(ratio+.28)},{x:w*.3,y:h*(ratio+.28)}];
+  const layout=poly=>{const f=new Fireworks({random:()=>.5});f.burst(w,h,false,poly);return f;};
+  const reference=layout([]).events.map(e=>[e.x,e.y,e.radius]);
+  assert.equal(reference.length,5);
+  for(const ratio of [.02,.15,.299,.45,.6]){
+   const f=layout(head(ratio));
+   assert.deepEqual(f.events.map(e=>[e.x,e.y,e.radius]),reference,`same place and size at headroom ${ratio}`);
    assert.equal(new Set(f.events.map(e=>e.palette.join(','))).size,3);
    const original=f.events.map(e=>({x:e.x,y:e.y,radius:e.radius}));f.update(.05,head(.45),w,h);
    assert.deepEqual(f.events.map(e=>({x:e.x,y:e.y,radius:e.radius})),original,'moving head does not recompose the running burst');
@@ -96,7 +104,19 @@ test('limited forehead space selects three colors and shells; roomy space restor
   const f=new Fireworks();f.burst(w,h,true,head(.15));assert.equal(f.events.length,2,'gentle mode remains lighter');
  }
 });
-
+test('sparks born over the face pass in front of it instead of snapping to its outline, then bounce once outside',()=>{
+  const face=[{x:150,y:150},{x:350,y:150},{x:350,y:400},{x:150,y:400}];
+  const f=new Fireworks({random:()=>.5});f.explode({x:250,y:250,radius:120,kind:'mum',count:80,palette:['#ff2e7e']});
+  const prev=new Map(f.pool.filter(p=>p.life>0).map(p=>[p,[p.x,p.y]]));
+  for(let i=0;i<6;i++){f.update(1/60,face,500,600);
+    for(const [p,[x,y]] of prev){if(p.life>0){assert.ok(Math.hypot(p.x-x,p.y-y)<12,'no jump to the outline');prev.set(p,[p.x,p.y]);}}}
+  assert.equal(f.collisions,0,'no contact while still over the face');
+  for(let i=0;i<240;i++)f.update(1/60,face,500,600);
+  // A spark that has left the face collides normally when it comes back.
+  const g=new Fireworks({random:()=>.5});g.explode({x:250,y:100,radius:40,kind:'mum',count:40,palette:['#fff']});
+  for(let i=0;i<240;i++)g.update(1/60,face,500,600);
+  assert.ok(g.collisions>0,'outside-born sparks still bounce off the face');
+});
 test('alive counter matches the pool exactly through launches, embers, edges and clear',()=>{
   const f=new Fireworks({random:(()=>{let x=7;return()=>(x=(x*16807)%2147483647)/2147483647;})()});
   const count=()=>f.pool.filter(p=>p.life>0).length;
@@ -107,4 +127,31 @@ test('alive counter matches the pool exactly through launches, embers, edges and
   }
   f.burst(500,700,false,poly);for(let i=0;i<90;i++)f.update(1/60,poly,500,700);
   assert.ok(f.alive>0);f.clear();assert.equal(f.alive,0);assert.equal(count(),0);
+});
+
+test('30 FPS keeps the same trail sampling, bouquet duration and particle use as 60 FPS',()=>{
+  const run=fps=>{
+    const seq=(()=>{let x=11;return()=>(x=(x*16807)%2147483647)/2147483647;})();
+    const f=new Fireworks({random:seq});f.burst(500,700,false,[]);
+    let t=0,records=0,peak=0;const rec=f.record.bind(f);f.record=p=>{records++;rec(p);};
+    while((f.events.length||f.flashes.length||f.alive)&&t<20){f.update(1/fps,[],500,700);t+=1/fps;peak=Math.max(peak,f.alive);}
+    return {t,records,peak};
+  };
+  const a=run(60),b=run(30);
+  assert.ok(Math.abs(a.t-b.t)<.1,`duration ${a.t.toFixed(2)}s vs ${b.t.toFixed(2)}s`);
+  assert.ok(Math.abs(a.records-b.records)/a.records<.05,`trail points ${a.records} vs ${b.records}`);
+  assert.equal(a.peak,b.peak);
+});
+test('the whole bouquet ends with the firework sound (~4 s); every shell still blooms to full size before fading',()=>{
+  for(const w of [261,390,430]){
+    const h=w*19.5/9,f=new Fireworks({random:()=>.5});f.burst(w,h,false,[]);
+    const shells=f.events.map(e=>({e,ps:new Set(),done:false}));let t=0;
+    const ex=f.explode.bind(f);f.explode=e=>{const s=shells.find(s=>s.e===e);const before=new Set(f.pool.filter(p=>p.life>0));ex(e);for(const p of f.pool)if(p.life>0&&!before.has(p))s.ps.add(p);};
+    while((f.events.length||f.flashes.length||f.alive)&&t<10){f.update(1/30,[],w,h);t+=1/30;
+      for(const s of shells){if(s.done||!s.ps.size)continue;let reach=0,bright=0;
+        for(const p of s.ps)if(p.life>0){reach=Math.max(reach,Math.hypot(p.x-s.e.x,p.y-s.e.y));bright=Math.max(bright,Math.min(1,p.life/p.fade));}
+        if(reach>=.9*s.e.radius){s.done=true;assert.ok(bright>=.75,`${w}px ${s.e.kind}: ${(bright*100).toFixed(0)}% bright at full size`);}}}
+    assert.ok(t<=4.1,`${w}px: bouquet lasts ${t.toFixed(2)}s`);
+    assert.ok(shells.every(s=>s.done),'every shell reaches full size');
+  }
 });

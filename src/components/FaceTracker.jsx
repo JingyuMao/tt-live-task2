@@ -1,79 +1,65 @@
-import { createTracker, prefetchTrackerAssets } from '../utils/tracker.js';
 import { useEffect, useRef } from 'react';
+import { createTracker } from '../utils/tracker.js';
+import { TrackerSession } from '../utils/trackerSession.js';
 
-/**
- * 人脸识别：在后台 Worker 中运行 MediaPipe Face Landmarker，不阻塞页面渲染。
- *
- * - Worker 位于 public/tracker-worker.js，模型与 WASM 位于 public/vendor/，全部同源、可离线。
- *   必须是 Classic Worker：MediaPipe 在 Worker 中用 importScripts 加载 WASM 加载器，Module Worker 不支持。
- * - 每帧缩到 480px 宽再识别，最多约 20 次/秒，同一时间只有一帧在途。
- * - onResult({ landmarks, smile, jaw, ms })：landmarks 为 468 个归一化关键点，无人脸时为 null。
- *
- * - 页面空闲时预先下载模型与 WASM，点击开启摄像头后无需再等待下载。
- *
- * 不渲染任何界面。
- */
-export default function FaceTracker({ videoRef, enabled, onReady, onResult, onError }) {
-  const callbacks = useRef({ onReady, onResult, onError });
-  callbacks.current = { onReady, onResult, onError };
-
-  useEffect(() => prefetchTrackerAssets(), []);
+// Prepare the Worker/model on mount, without opening the camera. Keep it warm between camera sessions.
+export default function FaceTracker({ videoRef, enabled, onPreparation, onReady, onResult, onError }) {
+  const callbacks = useRef({ onPreparation, onReady, onResult, onError });
+  callbacks.current = { onPreparation, onReady, onResult, onError };
+  const session = useRef(null);
 
   useEffect(() => {
-    if (!enabled) return undefined;
-    const cb = () => callbacks.current;
-    if (typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') {
-      cb().onError?.('当前浏览器不支持后台识别，请使用新版 Chrome、Edge 或 Safari。');
-      return undefined;
-    }
-
-    let disposed = false, ready = false, busy = false, ms = 0, lastInfer = 0, lastFrameTime = -1, raf = 0;
-    let transport;
-    try { transport = createTracker(); }
-    catch (error) { cb().onError?.('后台识别无法启动：' + error.message); return; }
-    const worker = transport.worker;
-    const timeout = setTimeout(() => {
-      if (!ready && !disposed) cb().onError?.('识别模型加载超时，请重试。');
-    }, 60000);
-
-    worker.onmessage = ({ data }) => {
-      if (disposed) return;
-      if (data.type === 'ready') { ready = true; clearTimeout(timeout); cb().onReady?.(); }
-      else if (data.type === 'result') { busy = false; ms = data.ms; cb().onResult?.(data); }
-      else if (data.type === 'error') cb().onError?.('识别加载或运行失败：' + data.message);
+    const tracker = new TrackerSession(() => {
+      if (typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') {
+        throw new Error('当前浏览器不支持后台识别，请使用新版 Chrome、Edge 或 Safari。');
+      }
+      return createTracker();
+    }, {
+      onPreparation: phase => callbacks.current.onPreparation?.(phase),
+      onReady: () => callbacks.current.onReady?.(),
+      onResult: data => callbacks.current.onResult?.(data),
+      onError: message => callbacks.current.onError?.(message),
+    });
+    session.current = tracker;
+    // Yield one task to render the page; StrictMode's discarded mount will not download twice.
+    const start = setTimeout(() => tracker.prepare(), 0);
+    const release = () => tracker.dispose();
+    window.addEventListener('pagehide', release);
+    const restore = event => { if (event.persisted) { tracker.disposed = false; tracker.enabled = false; tracker.phase = 'idle'; tracker.prepare(); } };
+    window.addEventListener('pageshow', restore);
+    return () => {
+      clearTimeout(start);
+      tracker.dispose();
+      session.current = null;
+      window.removeEventListener('pagehide', release);
+      window.removeEventListener('pageshow', restore);
     };
-    worker.onerror = () => { if (!disposed) cb().onError?.('后台识别不可用，请改用新版浏览器。'); };
-    worker.postMessage(transport.init);
+  }, []);
 
+  useEffect(() => {
+    const tracker = session.current;
+    tracker.setEnabled(enabled);
+    if (!enabled) return;
+    let disposed = false, preparing = false, raf = 0, lastInfer = 0, lastFrameTime = -1;
     const loop = async now => {
       raf = requestAnimationFrame(loop);
       const video = videoRef.current;
-      // 推理间隔随实际耗时自适应；视频没有新帧时不重复识别。
-      if (!ready || busy || document.hidden || !video || video.readyState < 2) return;
-      if (now - lastInfer < Math.max(50, ms * 1.15) || video.currentTime === lastFrameTime) return;
-      busy = true; lastInfer = now; lastFrameTime = video.currentTime;
+      if (!tracker.canSend() || preparing || document.hidden || !video || video.readyState < 2) return;
+      if (now - lastInfer < Math.max(50, tracker.ms * 1.15) || video.currentTime === lastFrameTime) return;
+      preparing = true; lastInfer = now; lastFrameTime = video.currentTime;
+      const epoch = tracker.epoch;
       try {
         const bitmap = await createImageBitmap(video, {
-          resizeWidth: 480,
-          resizeHeight: Math.round((480 * video.videoHeight) / video.videoWidth),
+          resizeWidth: 480, resizeHeight: Math.round(480 * video.videoHeight / video.videoWidth),
         });
-        if (disposed) { bitmap.close(); return; }
-        worker.postMessage({ type: 'frame', bitmap, timestamp: now }, [bitmap]);
+        if (disposed) bitmap.close();
+        else tracker.sendFrame(bitmap, now, epoch);
       } catch (error) {
-        busy = false;
-        if (!disposed) cb().onError?.('无法读取摄像头帧：' + error.message);
-      }
+        if (!disposed) callbacks.current.onError?.('无法读取摄像头帧：' + error.message);
+      } finally { preparing = false; }
     };
     raf = requestAnimationFrame(loop);
-
-    return () => {
-      disposed = true;
-      cancelAnimationFrame(raf);
-      clearTimeout(timeout);
-      worker.terminate();
-      transport.dispose();
-    };
+    return () => { disposed = true; cancelAnimationFrame(raf); tracker.setEnabled(false); };
   }, [enabled, videoRef]);
-
   return null;
 }

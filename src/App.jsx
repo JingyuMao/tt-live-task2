@@ -4,7 +4,7 @@ import Camera from './components/Camera.jsx';
 import FaceTracker from './components/FaceTracker.jsx';
 import RainEffect from './components/RainEffect.jsx';
 import FireworkEffect from './components/FireworkEffect.jsx';
-import { ModeLabel, RuntimeStats } from './components/StudioStats.jsx';
+import { ModeLabel } from './components/StudioStats.jsx';
 
 // 工作台界面的线条图标。
 function Icon({ children }) {
@@ -91,7 +91,7 @@ export default function App() {
         <section className="center">
           <div className="preview-toolbar">
             <span>直播预览</span>
-            <span className="ai-badge">✦ 表情互动已就绪</span>
+            <span className="ai-badge">✦ {face.preparation === 'ready' ? '表情互动已就绪' : face.preparation === 'error' ? '识别准备失败 · 开启时重试' : '正在准备表情识别…'}</span>
           </div>
           <div className="preview-space">
             <section className="stage" aria-label="9:19.5 直播互动预览">
@@ -136,7 +136,6 @@ export default function App() {
               {mode === 'loading' ? '取消开启' : mode === 'camera' ? '关闭摄像头' : '开启摄像头'} <span>{cameraOn ? '×' : '↗'}</span>
             </button>
           </div>
-          <RuntimeStats mode={mode} hud={hud} />
         </section>
 
         <aside className="panel performance">

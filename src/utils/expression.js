@@ -72,5 +72,7 @@ export class EffectTimer {
   active(now) { return now < this.until; }
 }
 
-// 星雨每次触发播放的时长。
-export const RAIN_DURATION_MS = 3000;
+// 星雨触发窗口。之后画面约 0.8 秒淡到看不见（再约 0.4 秒余光完全消失），
+// 看得见的部分约 3.9 秒，与星雨音乐的播放时长一致
+// （见 utils/audio.js 的 AUDIO.rain；tests/sync.test.mjs 校验两者同步，换音乐时需一起调整）。
+export const RAIN_DURATION_MS = 3100;
