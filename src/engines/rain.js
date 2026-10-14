@@ -50,6 +50,7 @@ export class StarRain {
       star:t>.84,trail:t>.61,size:(t>.84?1.8+depth*2.6:.45+depth*1.15)*Math.max(.7,fit),length:Math.min((.045+r()*.12)*h,w*.2),phase:r()*Math.PI*2,spin:(r()-.5)*.65,sway:3+r()*7});
   }
   update(dt,enabled,w,h,gentle=false){
+    if(!enabled&&this.level===0&&this.active===0&&!this.wasOn)return 0;
     dt=Math.max(0,Math.min(dt,.05));this.clock+=dt;
     // Resume a partially visible cloud; only a fully faded cloud starts over.
     if(enabled)this.cloudAge=Math.min(MIST_TIME,this.cloudAge+dt);

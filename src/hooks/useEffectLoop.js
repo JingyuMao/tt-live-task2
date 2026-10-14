@@ -1,3 +1,4 @@
+import { createFrameLoop } from '../utils/frameLoop.js';
 import { useCallback, useEffect, useRef } from 'react';
 import { ExpressionGate } from '../utils/expression.js';
 import { faceOutline } from '../utils/collision.js';
@@ -17,12 +18,13 @@ const FRAME_SLACK_MS = 2;
  * 共享帧循环：头部轮廓 → 表情判定 → 特效互斥调度 → 声音同步 → 绘制 → 界面数值。
  * settings 是 ref（{ mode, showOutline, gentle }），循环读取最新值而不重启。
  */
-export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, trackRef, settings, onPageHide }) {
+export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, trackRef, settings, onPageHide, running }) {
   // 界面数值不走 React state：写入外部 store，只有订阅的小组件重绘。
   const hud = useRef(null);
   if (!hud.current) hud.current = createHudStore({ face: false });
   const gate = useRef(new ExpressionGate());
   const effects = useRef(null);
+  const syncLoop = useRef(null);
   const polyRef = useRef([]);
   const audioState = useRef({ rainUntil: -Infinity, raining: false, fireworks: false });
   const sound = useRef(new EffectAudio());
@@ -51,11 +53,11 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
     };
     const ro = new ResizeObserver(fit); ro.observe(canvas); fit();
 
-    let raf = 0, last = 0, lastSample = 0, lastHud = 0, expression = 'neutral';
+    let cachedTrack = null, cachedSize = '', painted = false;
+    let last = 0, lastSample = 0, lastHud = 0, expression = 'neutral';
     const controller = new ExclusiveEffects(rainRef.current, fireworksRef.current);
     effects.current = controller;
     const loop = (now) => {
-      raf = requestAnimationFrame(loop);
       if (document.hidden) { last = now; return; }
       if (last && now - last < FRAME_MS - FRAME_SLACK_MS) return;
       const dt = now - (last || now); last = now;
@@ -65,7 +67,11 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
 
       // 1. 头部轮廓（碰撞体）
       if (s.mode === 'camera' && track.landmarks && now - track.at < LOST_FACE_MS && video?.videoWidth) {
-        polyRef.current = faceOutline(track.landmarks, video.videoWidth, video.videoHeight, w, h);
+        const key = `${video.videoWidth}:${video.videoHeight}:${w}:${h}`;
+        if (cachedTrack !== track || cachedSize !== key || !polyRef.current.length) {
+          polyRef.current = faceOutline(track.landmarks, video.videoWidth, video.videoHeight, w, h);
+          cachedTrack = track; cachedSize = key;
+        }
       } else polyRef.current = [];
       const poly = polyRef.current;
 
@@ -96,7 +102,9 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
       audioState.current = { rainUntil: controller.timer.until, raining, fireworks: fireworksBusy };
 
       // 4. 碰撞轮廓（设计开关，默认不显示）
-      ctx.clearRect(0, 0, w, h);
+      const visible = controller.mode !== 'idle' || (poly.length > 0 && s.showOutline);
+      if (painted || visible) ctx.clearRect(0, 0, w, h);
+      painted = visible;
       if (poly.length && s.showOutline) {
         ctx.beginPath(); poly.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.closePath();
         ctx.strokeStyle = '#d4f88ca0'; ctx.lineWidth = 1.4; ctx.setLineDash([4, 5]); ctx.stroke(); ctx.setLineDash([]);
@@ -110,10 +118,22 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
         hud.current.set({ face: poly.length > 0 });
       }
     };
-    raf = requestAnimationFrame(loop);
+    const scheduler = createFrameLoop(loop);
+    const sync = () => {
+      last = 0;
+      if (settings.current.mode === 'camera' && !document.hidden) scheduler.start();
+      else {
+        scheduler.stop();
+        ctx.clearRect(0, 0, size.w, size.h);
+        painted = false;
+        hud.current.set({ face: false });
+      }
+    };
+    syncLoop.current = sync;
+    sync();
 
     // 页面切到后台：清空特效与表情状态，回来后重新判定。
-    const onVisibility = () => { if (document.hidden) resetEffects(); };
+    const onVisibility = () => { if (document.hidden) resetEffects(); sync(); };
     // 浏览器要求先有用户操作才能出声：任意点击或按键时解锁音频。
     const unlock = () => sound.current.unlock();
     document.addEventListener('pointerdown', unlock, true);
@@ -123,7 +143,7 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
     const onHide = () => pageHide.current?.();
     window.addEventListener('pagehide', onHide);
     return () => {
-      cancelAnimationFrame(raf); ro.disconnect();
+      scheduler.stop(); syncLoop.current = null; ro.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
       document.removeEventListener('pointerdown', unlock, true);
       document.removeEventListener('keydown', unlock, true);
@@ -134,6 +154,8 @@ export function useEffectLoop({ overlayRef, rainRef, fireworksRef, videoRef, tra
       sound.current.dispose();
     };
   }, [overlayRef, rainRef, fireworksRef, videoRef, trackRef, settings, resetEffects]);
+
+  useEffect(() => { syncLoop.current?.(); }, [running]);
 
   return { hud: hud.current, gate, resetEffects };
 }

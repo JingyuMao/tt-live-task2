@@ -31,7 +31,7 @@ export function useStudio() {
     onFaceLost: () => loop.gate.current.reset(),
   });
   const loop = useEffectLoop({
-    overlayRef, rainRef, fireworksRef, settings,
+    overlayRef, rainRef, fireworksRef, settings, running: mode === 'camera',
     videoRef: face.videoRef, trackRef: face.trackRef,
     onPageHide: () => stop(),
   });

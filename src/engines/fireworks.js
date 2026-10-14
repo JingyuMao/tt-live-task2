@@ -108,6 +108,7 @@ export class Fireworks {
   }
   record(p){p.head=(p.head+1)%TRAIL;p.trail[p.head*2]=p.x;p.trail[p.head*2+1]=p.y;p.count=Math.min(TRAIL,p.count+1);}
   update(dt,poly,width,height){
+    if(!this.alive&&!this.events.length&&!this.flashes.length){this.active=0;return 0;}
     // Preview pacing: stretch the firework flight and bloom by about 18%.
     dt*=.85;
     this.clock+=dt;for(let i=this.events.length-1;i>=0;i--)if(this.events[i].at<=this.clock){this.explode(this.events[i]);this.events.splice(i,1);}
