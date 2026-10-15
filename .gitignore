@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+# 可选的单文件离线版本（npm run build:standalone 生成，约 18 MB）
+TT直播间特效.html
