@@ -860,3 +860,57 @@ button:disabled {
 .stage-social {
   margin-left: auto;
 }
+
+/* 手机：首屏放下顶栏、预览和摄像头按钮。预览保持 9:19.5，按剩余高度缩放；装饰性的侧栏面板排在首屏之后。 */
+@media (max-width: 620px) {
+  .studio {
+    height: auto;
+    min-height: 0;
+  }
+  .center {
+    height: calc(100dvh - 56px - 8px - env(safe-area-inset-bottom));
+    min-height: 420px;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .preview-space {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 6px 0;
+    display: flex;
+    justify-content: center;
+  }
+  .stage {
+    /* 不支持容器查询的浏览器：按视口高度估算。 */
+    width: min(100%, calc((100dvh - 200px) * 0.46153846));
+    align-self: center;
+  }
+  .below-preview {
+    margin-bottom: 8px;
+  }
+  /* 预览较窄时（小屏手机）标签不换行。 */
+  .identity,
+  .preview-tag {
+    white-space: nowrap;
+  }
+  .stage-top {
+    right: 8px;
+    gap: 6px;
+  }
+  .identity {
+    min-width: 0;
+  }
+  .identity strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+@supports (container-type: size) {
+  @media (max-width: 620px) {
+    .preview-space {
+      container-type: size;
+    }
+    .stage {
+      width: min(100cqw, 100cqh * 0.46153846);
+    }
+  }
+}
