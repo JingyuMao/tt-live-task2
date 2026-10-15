@@ -480,6 +480,8 @@ button span {
   flex: 1;
 }
 .audio-track {
+  /* 音量位置：白色圆点与青色进度条共用同一数值，保持对齐。 */
+  --level: 65%;
   height: 4px;
   background: #3a3a3d;
   width: 54px;
@@ -489,18 +491,19 @@ button span {
 }
 .audio-track i {
   position: absolute;
-  left: 65%;
+  left: var(--level);
   top: -6px;
   width: 16px;
   height: 16px;
   background: #e9e9eb;
   border-radius: 50%;
 }
-.audio-track.mic:before {
+/* 青色进度条延伸到圆点中心（圆点宽 16px，中心在 left + 8px）。 */
+.audio-track:before {
   content: "";
   display: block;
   background: #27cbaa;
-  width: 20%;
+  width: calc(var(--level) + 8px);
   height: 4px;
   border-radius: 4px;
 }

@@ -12,7 +12,11 @@ test('star rain visuals last as long as the star rain music', () => {
     let t = 0;
     for (; t < RAIN_DURATION_MS / 1000; t += dt) rain.update(dt, true, 390, 845);
     while (rain.level >= .05 && t < 10) { rain.update(dt, false, 390, 845); t += dt; }
-    const music = Math.max(...AUDIO.rain.tracks.map(s => s.delay + s.duration - s.start));
+    // 音乐在触发窗口结束时淡出（fadeOut），或自然播完，取先到者；淡出不能超过音乐本身的长度。
+    const natural = Math.max(...AUDIO.rain.tracks.map(s => s.delay + s.duration - s.start));
+    const fade = AUDIO.rain.fadeOut;
+    if (fade != null) assert.ok(RAIN_DURATION_MS / 1000 + fade <= natural + .05, 'music fade-out runs past the end of the track');
+    const music = fade == null ? natural : Math.min(natural, RAIN_DURATION_MS / 1000 + fade);
     assert.ok(Math.abs(t - music) < 0.1, `${fps} FPS: visible rain ${t.toFixed(2)}s vs music ${music.toFixed(2)}s`);
   }
 });

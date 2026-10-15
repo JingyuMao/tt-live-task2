@@ -155,3 +155,30 @@ test('the whole bouquet ends with the firework sound (~4 s); every shell still b
     assert.ok(shells.every(s=>s.done),'every shell reaches full size');
   }
 });
+test('a fast-moving face that shoves sparks never leaves long straight trail streaks',()=>{
+  const w=390,h=845,face=cx=>Array.from({length:36},(_,i)=>({x:cx+70*Math.cos(i*Math.PI/18),y:330+90*Math.sin(i*Math.PI/18)}));
+  // Moderate speeds drag sparks along the face a few px per update; fast speeds shove them tens of px.
+  for(const speed of [150,300,600,1200]){
+    let seed=9;const f=new Fireworks({random:()=>(seed=(seed*16807)%2147483647)/2147483647});f.burst(w,h,false,[]);
+    // The outline only updates at the recognition rate (every 50 ms), so a fast head jumps tens of px at a time.
+    let t=0,cx=60,dir=1,poly=face(cx),last=0,longest=0;
+    while(t<4.2){t+=1/30;
+      if(t-last>=.05){last=t;cx+=dir*speed*.05;if(cx>w-60||cx<60)dir*=-1;poly=face(cx);}
+      f.update(1/30,poly,w,h);
+      for(const p of f.pool){if(p.life<=0||!p.bounced)continue;
+        for(let k=1;k<p.count;k++){const a=(p.head-k+1+22)%22,b=(p.head-k+22)%22;longest=Math.max(longest,Math.hypot(p.trail[a*2]-p.trail[b*2],p.trail[a*2+1]-p.trail[b*2+1]));}}
+    }
+    assert.ok(f.collisions>100,`sparks still bounce off the moving face (${f.collisions})`);
+    assert.ok(longest<=10,`${speed}px/s: longest trail segment ${longest.toFixed(0)}px`);
+  }
+});
+test('safety net: trace never draws a segment longer than the limit, but keeps normal segments',()=>{
+  const f=new Fireworks(),p=f.pool[0],segments=[];let pen=null;
+  const ctx={beginPath(){pen=null;},moveTo(x,y){pen=[x,y];},lineTo(x,y){segments.push(Math.hypot(x-pen[0],y-pen[1]));pen=[x,y];}};
+  // Trail: 5 px steps, then one 60 px jump, then 5 px steps again.
+  const pts=[[0,0],[5,0],[10,0],[70,0],[75,0],[80,0]];
+  pts.forEach(([x,y],i)=>{p.trail[i*2]=x;p.trail[i*2+1]=y;});p.head=pts.length-1;p.count=pts.length;
+  f.trace(ctx,p,p.count-1,1);
+  assert.ok(segments.every(s=>s<=24),`drawn segments ${segments.join(',')}`);
+  assert.equal(segments.length,4,'the four short segments are still drawn');
+});

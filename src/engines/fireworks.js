@@ -35,6 +35,11 @@ const FIXED_FOREHEAD=.45;
 // The whole bouquet, embers included, is over this long after the laugh (seconds of real time), together with
 // the firework sound (~3.9 s). Late shells keep their full bloom and fade out faster instead of lingering.
 const BOUQUET_SECONDS=4.0,PACE=.85,FADE=1.25;
+// A bounce moves a spark at most its own step plus the contact offset; anything beyond that slack (CSS px) means
+// the moving face pushed it.
+const SHOVE_SLACK=3;
+// Longest trail segment ever drawn (CSS px). Real samples stay well below this; anything longer is skipped.
+const MAX_TRAIL_SEGMENT=24;
 const GENTLE=[{kind:'mum',dx:-.9,dy:0,r:.65,count:64,delay:0},{kind:'peony',dx:1,dy:.25,r:.52,count:48,delay:.48}];
 export class Fireworks {
   constructor({capacity=520,random=Math.random}={}){
@@ -123,10 +128,13 @@ export class Fireworks {
       const k=KINDS[p.kind],steps=Math.max(1,Math.ceil(Math.hypot(p.vx,p.vy)*dt/3),Math.ceil(dt*TRAIL_HZ)),step=dt/steps,damping=Math.exp(-k.drag*step);
       for(let s=0;s<steps;s++){
         p.vx*=damping;p.vy=p.vy*damping+k.gravity*step;p.x+=p.vx*step;p.y+=p.vy*step;
+        const bx=p.x,by=p.y,own=Math.hypot(p.vx,p.vy)*step;
         if(p.armed&&p.x>=minX-3&&p.x<=maxX+3&&p.y>=minY-3&&p.y<=maxY+3&&collide(p,poly,2)){
           this.collisions++;
-          // Start the reflected trail at contact; do not connect it through the face.
-          if(!p.bounced){p.head=0;p.count=1;p.trail[0]=p.x;p.trail[1]=p.y;p.sample=0;}
+          // Start the reflected trail at contact; do not connect it through the face. When the face itself moved
+          // (the push is longer than this spark's own step), restart the trail too: otherwise a spark dragged along
+          // a moving face draws the face's path as one long streak.
+          if(!p.bounced||Math.hypot(p.x-bx,p.y-by)>own+SHOVE_SLACK){p.head=0;p.count=1;p.trail[0]=p.x;p.trail[1]=p.y;p.sample=0;}
           p.bounced=true;this.record(p);
         }
         p.sample+=step;if(p.sample>=1/TRAIL_HZ){p.sample-=1/TRAIL_HZ;this.record(p);}
@@ -145,7 +153,11 @@ export class Fireworks {
   }
   trace(ctx,p,far,near){
     ctx.beginPath();let first=true;
-    for(let k=far;k>=near;k--){const a=(p.head-k+TRAIL)%TRAIL,b=(a+1)%TRAIL;if(first){ctx.moveTo(p.trail[a*2],p.trail[a*2+1]);first=false;}ctx.lineTo(p.trail[b*2],p.trail[b*2+1]);}
+    for(let k=far;k>=near;k--){const a=(p.head-k+TRAIL)%TRAIL,b=(a+1)%TRAIL;
+      const ax=p.trail[a*2],ay=p.trail[a*2+1],bx=p.trail[b*2],by=p.trail[b*2+1];
+      // Safety net: never draw an implausibly long straight segment; lift the pen and continue from the next point.
+      if((bx-ax)**2+(by-ay)**2>MAX_TRAIL_SEGMENT**2){first=true;continue;}
+      if(first){ctx.moveTo(ax,ay);first=false;}ctx.lineTo(bx,by);}
   }
   shade(){
     if(this.shadeSprite)return this.shadeSprite;
